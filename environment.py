@@ -23,6 +23,21 @@ class V2GEnvironment:
 
     def step(self, action):
         ut, Et = self.state["status"]  # Get current status for home and battery level
+
+        #Morning commute minimum %80 Constraint
+        next_time = self.state["time"] + datetime.timedelta(hours=1)  #Get next time
+
+        if next_time.hour == 8 and Et < 0.8 * self.battery_capacity:
+            needed_charge = 0.8 * self.battery_capacity - Et
+            if(needed_charge > action):
+                action = needed_charge #Ensure enough charging action to meet the requirement
+
+        # Always keep a minimum of 20% battery level Constraint
+        min_required = 0.2 * self.battery_capacity
+        if Et + action < min_required:
+            action = min_required - Et  # Adjust action to maintain minimum battery level
+
+
         new_Et = np.clip(Et + action, 0, self.battery_capacity)  # Perform action and get new battery level
 
         cost = self.electricity_prices[-1] * action  # Gained Reward calculation = action * last price
@@ -38,7 +53,7 @@ class V2GEnvironment:
         #Update the state with new battery level, time, and electricity prices
         self.state = {"status": [ut, new_Et], "time": new_time, "prices": self.electricity_prices}
         
-        return self.state, self.rewards
+        return self.state, self.rewards, action
     
     def get_new_price(self):
         #Placeholder for obtaining new electricity price
@@ -49,16 +64,16 @@ env = V2GEnvironment(max_charge_rate=10, max_discharge_rate=-10, battery_capacit
 state = env.reset()
 for step in range(10):  # Simulate 10 steps
     action = np.random.uniform(env.max_discharge_rate, env.max_charge_rate)  # Random action
-    state, reward = env.step(action)
+    state, reward, act = env.step(action)
 
     # Determine if the action is a charge or discharge
-    action_type = 'Charge' if action > 0 else 'Discharge'
+    action_type = 'Charge' if act > 0 else 'Discharge'
     
     # Extract data from the state dictionary
     ut, new_Et = state["status"]  # Updated vehicle status at home and battery level
 
     print(f"Step {step + 1}:")
-    print(f"Action taken: {action_type} ({action:.2f} units)")
+    print(f"Action taken: {action_type} ({act:.2f} units)")
     print(f"Total reward: {reward:.2f}")
     print(f"New battery level: {new_Et:.2f} units")
     print(f"Current Date-Time: {state['time'].strftime('%Y-%m-%d %H:%M:%S')}")
