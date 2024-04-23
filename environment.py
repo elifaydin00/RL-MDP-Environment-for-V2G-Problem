@@ -9,12 +9,11 @@ class V2GEnvironment:
         self.gamma = gamma
         self.state = self.reset() #initial configuration state
     
-    #state contains whether ev is at home or not, current battery level and past 24 hrprices
+    #state contains whether ev is at home or not, current battery level and past 24 hr prices
     def reset(self):
         # Initialize the state based on the problem description
         ut = 1 #ut is set to 1 to indicate the EV is at home
         Et = self.battery_capacity / 2 #battery energy starts at half capacity
-        #past_prices = np.zeros(24) #dummy value for past electricity prices
         past_prices = np.random.uniform(low=0.05, high=0.20, size=24)  #random prices for the past 24 hours within a given range
         return np.array([ut, Et] + list(past_prices)) #return the state
 
