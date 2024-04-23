@@ -6,6 +6,7 @@ class V2GEnvironment:
         self.max_discharge_rate = max_discharge_rate
         self.battery_capacity = battery_capacity
         self.electricity_prices = electricity_prices
+        self.rewards = 0
         self.gamma = gamma
         self.state = self.reset() #initial configuration state
     
@@ -21,9 +22,9 @@ class V2GEnvironment:
         ut, Et = self.state[0], self.state[1] #get current state for home status and battery level
         new_Et = np.clip(Et + action, 0, self.battery_capacity) #perform action, get new battery level, np.clip restricts the range
         #action can be positive or negative, positive is charhing, negative is selling (recharhing)
-        cost = self.electricity_prices[-1] * action #apply reward
+        cost = self.electricity_prices[-1] * action #Gained Reward calculation= action * last price
         
-        reward = -cost  #goal is minimizing the payings for the electricity
+        self.rewards = self.rewards -cost  #Update cumulative rewards
         
         #Update the electricity prices to simulate time passing
         self.electricity_prices = np.roll(self.electricity_prices, -1) #shift the prices array
@@ -32,7 +33,7 @@ class V2GEnvironment:
         #Update the state by applying new battery level and electricity prices
         self.state = np.array([ut, new_Et] + list(self.electricity_prices))
         
-        return self.state, reward
+        return self.state, self.rewards
     
     def get_new_price(self):
         #Placeholder for obtaining new electricity price
@@ -50,7 +51,7 @@ for step in range(10):  # Simulate 10 steps
     
     print(f"Step {step + 1}:")
     print(f"Action taken: {action_type} ({action:.2f} units)")
-    print(f"Reward gained: {reward:.2f}")
+    print(f"Total reward: {reward:.2f}")
     print(f"New battery level: {state[1]:.2f} units")
     print(f"Electricity price for the last hour: {env.electricity_prices[-1]:.2f}")
     print(f"Total state vector: {state}")
