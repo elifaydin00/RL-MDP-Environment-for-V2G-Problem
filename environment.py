@@ -16,10 +16,9 @@ class V2GEnvironment:
         # Initialize the state based on the problem description
         ut = 1 #ut is set to 1 to indicate the EV is at home
         Et = self.battery_capacity / 2 #battery energy starts at half capacity
-        past_prices = np.random.uniform(low=0.05, high=0.20, size=24)  #random prices for the past 24 hours within a given range
         time_variable = datetime.datetime(2024, 1, 1, 0, 0)  #Set the time variable to January 1, 2024 at 00:00
         hour = time_variable.hour  #Extract the hour (though it will be 0 in this case)
-        return {"status": [ut, Et], "time": time_variable, "prices": past_prices} #State
+        return {"status": [ut, Et], "time": time_variable, "prices": self.electricity_prices} #State
 
     def step(self, action):
         ut, Et = self.state["status"]  # Get current status for home and battery level
@@ -40,18 +39,23 @@ class V2GEnvironment:
 
         new_Et = np.clip(Et + action, 0, self.battery_capacity)  # Perform action and get new battery level
 
-        cost = self.electricity_prices[-1] * action  # Gained Reward calculation = action * last price
-        self.rewards -= cost  # Update cumulative rewards
+        # Calculate the cost based on the price at the 0th index and the action taken
+        cost = self.state["prices"][0] * action
 
-        # Update the electricity prices to simulate time passing
-        self.electricity_prices = np.roll(self.electricity_prices, -1)
-        self.electricity_prices[-1] = self.get_new_price()
+        # Update cumulative rewards by subtracting the cost
+        self.rewards -= cost
+
+        # Shift the prices in the state to simulate time passing
+        self.state["prices"] = np.roll(self.state["prices"], -1)
+
+        # Update the last price in the shifted array with a new price from the method
+        #self.state["prices"][-1] = self.get_new_price()
         
         #Increment the hour by 1
         new_time = self.state["time"] + datetime.timedelta(hours=1)
 
         #Update the state with new battery level, time, and electricity prices
-        self.state = {"status": [ut, new_Et], "time": new_time, "prices": self.electricity_prices}
+        self.state = {"status": [ut, new_Et], "time": new_time, "prices": self.state["prices"]}
         
         return self.state, self.rewards, action
     
@@ -60,22 +64,44 @@ class V2GEnvironment:
         #In practice, this would come from a predictive model or the environment
         return np.random.uniform(low=0.05, high=0.20)
 
-env = V2GEnvironment(max_charge_rate=10, max_discharge_rate=-10, battery_capacity=100, electricity_prices=np.random.uniform(0.05, 0.20, size=24))
-state = env.reset()
-for step in range(10):  # Simulate 10 steps
-    action = np.random.uniform(env.max_discharge_rate, env.max_charge_rate)  # Random action
-    state, reward, act = env.step(action)
 
-    # Determine if the action is a charge or discharge
-    action_type = 'Charge' if act > 0 else 'Discharge'
-    
-    # Extract data from the state dictionary
-    ut, new_Et = state["status"]  # Updated vehicle status at home and battery level
+past_prices = [
+        0.06, 0.06, 0.06, 0.06, 0.06,  # 00:00 to 04:00 - Low (night time)
+        0.07, 0.07,  # 05:00 to 06:00 - Increasing (early risers)
+        0.09, 0.11, 0.11, 0.10, 0.10,  # 07:00 to 11:00 - High (morning commute)
+        0.08, 0.08, 0.08, 0.08,  # 12:00 to 15:00 - Moderate (daytime)
+        0.09, 0.09,  # 16:00 to 17:00 - Increasing (late afternoon)
+        0.12, 0.15, 0.18, 0.18,  # 18:00 to 21:00 - Peak (evening commute and usage)
+        0.12, 0.10, 0.08  # 22:00 to 23:00 - Decreasing (night begins)
+        ]
 
-    print(f"Step {step + 1}:")
-    print(f"Action taken: {action_type} ({act:.2f} units)")
-    print(f"Total reward: {reward:.2f}")
-    print(f"New battery level: {new_Et:.2f} units")
-    print(f"Current Date-Time: {state['time'].strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Total state vector: {state}")
-    print("---")
+
+env = V2GEnvironment(max_charge_rate=10, max_discharge_rate=-10, battery_capacity=100, electricity_prices=past_prices)
+number_of_runs = 2
+day_rewards = [0 for _ in range(number_of_runs)]
+for run in range(number_of_runs):
+    #TO FIX Problem on reset function
+    #state = env.reset() 
+    env = V2GEnvironment(max_charge_rate=10, max_discharge_rate=-10, battery_capacity=100, electricity_prices=past_prices)
+    day_reward = 0
+    for step in range(24):  # Simulate 24 steps (hours)
+        action = np.random.uniform(env.max_discharge_rate, env.max_charge_rate)  # Random action
+        state, reward, act = env.step(action)
+        day_reward += reward
+        # Determine if the action is a charge or discharge
+        action_type = 'Charge' if act > 0 else 'Discharge'
+        
+        # Extract data from the state dictionary
+        ut, new_Et = state["status"]  # Updated vehicle status at home and battery level
+
+        print(f"Step {step + 1}:")
+        print(f"Action taken: {action_type} ({act:.2f} units)")
+        print(f"Total reward gained: {reward:.2f}")
+        print(f"New battery level: {new_Et:.2f} units")
+        print(f"Current Date-Time: {state['time'].strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Total state vector: {state}")
+        print("---")
+    day_rewards[run] = day_reward
+
+print("Results of day rewards: ",day_rewards)
+
