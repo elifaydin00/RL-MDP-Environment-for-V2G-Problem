@@ -20,44 +20,73 @@ class V2GEnvironment:
         hour = time_variable.hour  #Extract the hour (though it will be 0 in this case)
         return {"status": [ut, Et], "time": time_variable, "prices": self.electricity_prices} #State
 
-    def step(self, action):
-        ut, Et = self.state["status"]  # Get current status for home and battery level
+    def printStep(self, step, action, reward, new_Et, state):
+        action_type = 'Charge' if action > 0 else 'Discharge'
+        
+        # Extract data from the state dictionary
+        ut, new_Et = state["status"]  #Vehicle status at home and battery level
 
-        #Morning commute minimum %80 Constraint
-        next_time = self.state["time"] + datetime.timedelta(hours=1)  #Get next time
+        print(f"Step {step + 1}:")
+        print(f"Action taken: {action_type} ({action:.2f} units)")
+        print(f"Total reward: {reward:.2f}")
+        print(f"New battery level: {new_Et:.2f} units")
+        print(f"Current Date-Time: {state['time'].strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Total state vector: {state}")
+        print("---")
 
-        if next_time.hour == 8 and Et < 0.8 * self.battery_capacity:
-            needed_charge = 0.8 * self.battery_capacity - Et
-            if(needed_charge > action):
-                action = needed_charge #Ensure enough charging action to meet the requirement
+    def constraints(self, Et, next_time, action):
+
+        #Morning and evening commute minimum %80 Constraint
+        if next_time.hour == 8 or next_time.hour == 18 and Et < 0.8 * self.battery_capacity:
+                needed_charge = 0.8 * self.battery_capacity - Et
+                if(needed_charge > action):
+                    action = needed_charge #Ensure enough charging action to meet the requirement
 
         # Always keep a minimum of 20% battery level Constraint
+        #Improves battery lifecycle, emergency usage
         min_required = 0.2 * self.battery_capacity
         if Et + action < min_required:
             action = min_required - Et  # Adjust action to maintain minimum battery level
 
+        return action
 
-        new_Et = np.clip(Et + action, 0, self.battery_capacity)  # Perform action and get new battery level
 
-        # Calculate the cost based on the price at the 0th index and the action taken
-        cost = self.state["prices"][0] * action
 
-        # Update cumulative rewards by subtracting the cost
-        self.rewards -= cost
+    def step(self):
 
-        # Shift the prices in the state to simulate time passing
-        self.state["prices"] = np.roll(self.state["prices"], -1)
+        for i in range(24):  # Simulate 24 steps (hours)
+            action = np.random.uniform(env.max_discharge_rate, env.max_charge_rate)  # Random action
 
-        # Update the last price in the shifted array with a new price from the method
-        #self.state["prices"][-1] = self.get_new_price()
-        
-        #Increment the hour by 1
-        new_time = self.state["time"] + datetime.timedelta(hours=1)
+            ut, Et = self.state["status"]  # Get current status for home and battery level
 
-        #Update the state with new battery level, time, and electricity prices
-        self.state = {"status": [ut, new_Et], "time": new_time, "prices": self.state["prices"]}
-        
-        return self.state, self.rewards, action
+            #Get next time to apply constraints
+            next_time = self.state["time"] + datetime.timedelta(hours=1)  #Get next time
+
+            #Check constraints
+            action = self.constraints(Et, next_time, action)
+            new_Et = np.clip(Et + action, 0, self.battery_capacity)  # Perform action and get new battery level
+
+            #Calculate the cost based on the price at the 0th index and the action taken
+            cost = self.state["prices"][0] * action
+
+            #Update cumulative rewards by subtracting the cost
+            self.rewards -= cost
+
+            #Shift the prices in the state to simulate time passing
+            self.state["prices"] = np.roll(self.state["prices"], -1)
+
+            #Update the last price in the shifted array with a new price from the method
+            #self.state["prices"][-1] = self.get_new_price()
+            
+            #Increment the hour by 1
+            new_time = self.state["time"] + datetime.timedelta(hours=1)
+
+            #Update the state with new battery level, time, and electricity prices
+            self.state = {"status": [ut, new_Et], "time": new_time, "prices": self.state["prices"]}
+
+            self.printStep(i, action, self.rewards, new_Et, self.state)
+        return self.rewards
+
     
     def get_new_price(self):
         #Placeholder for obtaining new electricity price
@@ -83,25 +112,8 @@ for run in range(number_of_runs):
     #TO FIX Problem on reset function
     #state = env.reset() 
     env = V2GEnvironment(max_charge_rate=10, max_discharge_rate=-10, battery_capacity=100, electricity_prices=past_prices)
-    day_reward = 0
-    for step in range(24):  # Simulate 24 steps (hours)
-        action = np.random.uniform(env.max_discharge_rate, env.max_charge_rate)  # Random action
-        state, reward, act = env.step(action)
-        day_reward += reward
-        # Determine if the action is a charge or discharge
-        action_type = 'Charge' if act > 0 else 'Discharge'
-        
-        # Extract data from the state dictionary
-        ut, new_Et = state["status"]  # Updated vehicle status at home and battery level
-
-        print(f"Step {step + 1}:")
-        print(f"Action taken: {action_type} ({act:.2f} units)")
-        print(f"Total reward gained: {reward:.2f}")
-        print(f"New battery level: {new_Et:.2f} units")
-        print(f"Current Date-Time: {state['time'].strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Total state vector: {state}")
-        print("---")
-    day_rewards[run] = day_reward
+    run_reward= env.step()
+    day_rewards[run] = run_reward
 
 print("Results of day rewards: ",day_rewards)
 
